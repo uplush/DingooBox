@@ -1,0 +1,25 @@
+.gradle/
+.kotlin/
+.idea/
+local.properties
+**/build/
+native/DingooEmu/target/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing and environment secrets
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+.env
+
+# Operating-system and editor files
+.DS_Store
+
+# Local incremental patch hand-off notes and migration helper
+ALPHA*_OVERLAY_README.md
+ALPHA*_COMPILE_FIX_README.md
+apply-package-rename.ps1
