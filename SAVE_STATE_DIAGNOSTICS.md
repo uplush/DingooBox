@@ -26,7 +26,7 @@ $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
 adb install -r ".\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
-The installed version must report `0.2.0-alpha26` or later.
+The installed version must report `1.0.0` or later.
 
 ## Capture one failed save
 

@@ -1,3 +1,14 @@
+# 1.0.0
+
+- Initial public release of DingooBox for Android.
+- Set the formal application ID to `io.github.uplush.dingoobox` without a
+  debug-only package suffix.
+- Included the Dingoo A320 game library, original-folder execution, physical
+  and virtual controller support, save-state management, shortcuts, cover
+  management, localization and MiNiQ-aligned navigation.
+- Retained DingooEmu author attribution, the original project address,
+  permission statement and third-party license notices.
+
 # 0.2.0-alpha26 fix12
 
 - Restored controller navigation on the in-game save-state, load-state and
