@@ -4,7 +4,7 @@
 [AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu) libretro 核心构建。
 界面使用 Jetpack Compose 和 Material 3，原生桥接层通过 JNI 驱动模拟核心。
 
-> 当前版本：`1.0.0`
+> 当前版本：`1.0.1`
 >
 > Android 包名：`io.github.uplush.dingoobox`
 
