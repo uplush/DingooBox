@@ -26,7 +26,8 @@ $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
 adb install -r ".\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
-The installed version must report `1.0.0` or later.
+The installed version must report `1.0.1` or later. Version `1.0.0` bundled a
+stale precompiled core that still enforced the old 64 MiB decoded-state limit.
 
 ## Capture one failed save
 
@@ -44,11 +45,22 @@ adb logcat -d -s DingooState:I DingooCore:E *:S
 the destination, or writing/flushing it. `DingooCore` contains the underlying
 Rust serializer error, including decoded-size and fixed-capacity failures.
 
-## Verify files
+## Verify the result
+
+After a successful save, Logcat reports `Save completed` instead of
+`retro_serialize returned false`:
+
+```powershell
+adb logcat -d -s DingooState:I DingooCore:E *:S
+```
+
+The following private-directory check works only for a debuggable build:
 
 ```powershell
 adb shell run-as io.github.uplush.dingoobox ls -lR files/states
 ```
 
-A successful state created by the bundled core is exactly 50,331,648 bytes.
-Alpha18 updates a preview image only after the matching state succeeds.
+Android intentionally rejects `run-as` for the signed Release APK with
+`package not debuggable`; that message is unrelated to saving. A successful
+state created by the bundled core is exactly 50,331,648 bytes. Alpha18 updates
+a preview image only after the matching state succeeds.
