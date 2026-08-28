@@ -2,6 +2,10 @@ name: Rebuild DingooEmu Core
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/rebuild-core.yml
 
 permissions:
   contents: write
