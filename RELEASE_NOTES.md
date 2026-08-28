@@ -1,13 +1,13 @@
 # 1.0.0
 
-- Initial public release of DingooBox for Android.
-- Set the formal application ID to `io.github.uplush.dingoobox` without a
-  debug-only package suffix.
-- Included the Dingoo A320 game library, original-folder execution, physical
-  and virtual controller support, save-state management, shortcuts, cover
-  management, localization and MiNiQ-aligned navigation.
-- Retained DingooEmu author attribution, the original project address,
-  permission statement and third-party license notices.
+- 丁果盒（DingooBox）Android 首个正式版本。
+- 正式包名为 `io.github.uplush.dingoobox`，不再使用 Debug 包名后缀。
+- 支持 Dingoo A320 游戏库、从原文件夹直接运行游戏、实体与虚拟手柄、
+  即时存档管理、桌面快捷方式、封面管理、中英文界面及 MiNiQ 风格导航。
+- 保留 DingooEmu 原作者 `@AloysHF` 署名、原项目地址、二创许可说明与
+  第三方许可证信息。
+- 正式 APK 使用 DingooBox 专用 Release 证书签名，仅支持 `arm64-v8a`，
+  适用于 Android 7.0（API 24）及以上版本。
 
 # 0.2.0-alpha26 fix12
 
