@@ -1,3 +1,13 @@
+# 1.0.1
+
+- 修复 `1.0.0` 正式 APK 误带旧版 DingooEmu 核心，导致部分游戏的即时存档、
+  手动存档和自动存档提示 `save-state payload exceeds the decoded size limit`。
+- 从当前 Rust 源码重新编译核心，将存档解码安全上限由 64 MiB 提高到
+  128 MiB；libretro 固定存档容量仍为 48 MiB，存档格式与既有成功存档兼容。
+- 发布流程现在会强制重新编译 Rust 核心，并检查新错误信息、ARM64 架构和
+  16 KB ELF 段对齐，避免源码修复未进入 APK。
+- 包名和 Release 签名保持不变，可直接覆盖安装，无需清除游戏目录、存档或设置。
+
 # 1.0.0
 
 - 丁果盒（DingooBox）Android 首个正式版本。
