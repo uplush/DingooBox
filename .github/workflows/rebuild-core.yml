@@ -1,0 +1,43 @@
+name: Rebuild DingooEmu Core
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Android toolchain
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+          sdkmanager "ndk;28.2.13676358"
+
+      - name: Rebuild and verify DingooEmu core
+        run: |
+          chmod +x scripts/build-core.sh scripts/verify-core.sh
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./scripts/build-core.sh
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./scripts/verify-core.sh
+
+      - name: Commit rebuilt core
+        run: |
+          CORE="app/src/main/jniLibs/arm64-v8a/libdingooemu.so"
+          if git diff --quiet -- "$CORE"; then
+            echo "The checked-in core already matches the Rust source."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$CORE"
+          git commit -m "Rebuild DingooEmu core for save states"
+          git push
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DingooEmu-arm64-v8a-core
+          path: app/src/main/jniLibs/arm64-v8a/libdingooemu.so
