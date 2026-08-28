@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.uplush.dingoobox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 26
-        versionName = "0.2.0-alpha26"
+        versionCode = 1
+        versionName = "1.0.0"
 
         ndk {
             abiFilters += "arm64-v8a"
