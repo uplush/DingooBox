@@ -7,12 +7,11 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <fcntl.h>
 #include <fstream>
-#include <linux/memfd.h>
 #include <mutex>
 #include <string>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 #include <vector>
 
@@ -62,6 +61,7 @@ bool retro_unserialize(const void *, size_t);
 }
 
 constexpr unsigned ENV_SET_PERFORMANCE_LEVEL = 8;
+constexpr unsigned ENV_SHUTDOWN = 7;
 constexpr unsigned ENV_SET_PIXEL_FORMAT = 10;
 constexpr unsigned ENV_SET_INPUT_DESCRIPTORS = 11;
 constexpr unsigned ENV_GET_VARIABLE = 15;
@@ -82,10 +82,11 @@ std::vector<uint16_t> frame(320 * 240, 0);
 std::vector<int16_t> audio;
 std::string save_directory;
 int rom_file_descriptor = -1;
-std::string rom_alias_path;
-std::string rom_alias_directory;
+std::string rom_runtime_path;
+std::string rom_runtime_directory;
 bool core_initialized = false;
 bool game_loaded = false;
+std::atomic<bool> shutdown_requested{false};
 
 void core_log(unsigned level, const char *message) {
     // The core emits very large JIT IR dumps at info level. The Android
@@ -106,6 +107,14 @@ void core_log(unsigned level, const char *message) {
 
 bool environment(unsigned command, void *data) {
     switch (command) {
+        case ENV_SHUTDOWN:
+            shutdown_requested.store(true, std::memory_order_release);
+            __android_log_write(
+                ANDROID_LOG_INFO,
+                CORE_LOG_TAG,
+                "Core requested frontend shutdown"
+            );
+            return true;
         case ENV_SET_PIXEL_FORMAT:
             return data != nullptr && *static_cast<unsigned *>(data) == PIXEL_FORMAT_RGB565;
         case ENV_GET_SAVE_DIRECTORY:
@@ -173,17 +182,7 @@ std::string from_jstring(JNIEnv *env, jstring value) {
     return result;
 }
 
-int create_rom_memory_file(const std::string &name) {
-    return static_cast<int>(
-        syscall(
-            __NR_memfd_create,
-            name.c_str(),
-            MFD_CLOEXEC
-        )
-    );
-}
-
-bool write_rom_memory_file(
+bool write_rom_file(
     int file_descriptor,
     const jbyte *data,
     size_t size
@@ -215,49 +214,48 @@ std::string safe_rom_name(std::string name) {
     return name;
 }
 
-std::string create_rom_path_alias(
-    int file_descriptor,
-    const std::string &rom_name,
-    std::string *alias_path,
-    std::string *alias_directory
-) {
-    const std::string descriptor_path =
-        "/proc/self/fd/" + std::to_string(file_descriptor);
+int create_rom_runtime_file(const std::string &rom_name) {
     const size_t separator = save_directory.find_last_of('/');
-    if (separator == std::string::npos) return descriptor_path;
+    if (separator == std::string::npos) return -1;
 
-    *alias_directory = save_directory.substr(0, separator) + "/.rom-runtime";
+    rom_runtime_directory =
+        save_directory.substr(0, separator) + "/.rom-runtime";
     if (
-        mkdir(alias_directory->c_str(), 0700) != 0 &&
+        mkdir(rom_runtime_directory.c_str(), 0700) != 0 &&
         errno != EEXIST
     ) {
-        alias_directory->clear();
-        return descriptor_path;
+        rom_runtime_directory.clear();
+        return -1;
     }
 
-    *alias_path = *alias_directory + "/" + safe_rom_name(rom_name);
-    unlink(alias_path->c_str());
-    if (symlink(descriptor_path.c_str(), alias_path->c_str()) != 0) {
-        alias_path->clear();
-        rmdir(alias_directory->c_str());
-        alias_directory->clear();
-        return descriptor_path;
+    rom_runtime_path =
+        rom_runtime_directory + "/" + safe_rom_name(rom_name);
+    unlink(rom_runtime_path.c_str());
+    const int file_descriptor = open(
+        rom_runtime_path.c_str(),
+        O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC,
+        0600
+    );
+    if (file_descriptor < 0) {
+        rom_runtime_path.clear();
+        rmdir(rom_runtime_directory.c_str());
+        rom_runtime_directory.clear();
     }
-    return *alias_path;
+    return file_descriptor;
 }
 
-void release_rom_memory_file() {
-    if (!rom_alias_path.empty()) {
-        unlink(rom_alias_path.c_str());
-        rom_alias_path.clear();
-    }
+void release_rom_runtime_file() {
     if (rom_file_descriptor >= 0) {
         close(rom_file_descriptor);
         rom_file_descriptor = -1;
     }
-    if (!rom_alias_directory.empty()) {
-        rmdir(rom_alias_directory.c_str());
-        rom_alias_directory.clear();
+    if (!rom_runtime_path.empty()) {
+        unlink(rom_runtime_path.c_str());
+        rom_runtime_path.clear();
+    }
+    if (!rom_runtime_directory.empty()) {
+        rmdir(rom_runtime_directory.c_str());
+        rom_runtime_directory.clear();
     }
 }
 
@@ -270,12 +268,12 @@ void shutdown_core() {
         retro_deinit();
         core_initialized = false;
     }
-    // DingooEmu retains the content path as app_path and can resolve files
-    // relative to it after retro_load_game() has returned. Keep the anonymous
-    // ROM descriptor and its filename alias alive for the complete session,
-    // then release both only after the core has unloaded.
-    release_rom_memory_file();
+    // DingooEmu retains the content path after retro_load_game() returns.
+    // Keep the private runtime file alive for the complete session and remove
+    // it only after the core has unloaded.
+    release_rom_runtime_file();
     input_mask.store(0, std::memory_order_relaxed);
+    shutdown_requested.store(false, std::memory_order_relaxed);
 }
 
 }  // namespace
@@ -300,17 +298,17 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeInitialize(
     jbyte *rom_bytes = env->GetByteArrayElements(rom_data_value, nullptr);
     if (rom_bytes == nullptr) return JNI_FALSE;
 
-    rom_file_descriptor = create_rom_memory_file(rom_name);
+    rom_file_descriptor = create_rom_runtime_file(rom_name);
     if (
         rom_file_descriptor < 0 ||
-        !write_rom_memory_file(
+        !write_rom_file(
             rom_file_descriptor,
             rom_bytes,
             static_cast<size_t>(rom_size)
         )
     ) {
         const int saved_errno = errno;
-        release_rom_memory_file();
+        release_rom_runtime_file();
         env->ReleaseByteArrayElements(
             rom_data_value,
             rom_bytes,
@@ -319,7 +317,7 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeInitialize(
         __android_log_print(
             ANDROID_LOG_ERROR,
             "DingooJNI",
-            "Unable to create anonymous ROM file for %s: errno=%d",
+            "Unable to create private ROM runtime file for %s: errno=%d",
             rom_name.c_str(),
             saved_errno
         );
@@ -331,13 +329,6 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeInitialize(
         JNI_ABORT
     );
 
-    const std::string game_path = create_rom_path_alias(
-        rom_file_descriptor,
-        rom_name,
-        &rom_alias_path,
-        &rom_alias_directory
-    );
-
     retro_set_environment(environment);
     retro_set_video_refresh(video_refresh);
     retro_set_audio_sample(audio_sample);
@@ -347,18 +338,19 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeInitialize(
     retro_init();
     core_initialized = true;
 
-    const retro_game_info info{game_path.c_str(), nullptr, 0, nullptr};
+    const retro_game_info info{rom_runtime_path.c_str(), nullptr, 0, nullptr};
     game_loaded = retro_load_game(&info);
     if (!game_loaded) {
         shutdown_core();
         __android_log_print(
             ANDROID_LOG_ERROR,
             "DingooJNI",
-            "Failed to load %s from anonymous memory",
+            "Failed to load %s from private runtime storage",
             rom_name.c_str()
         );
         return JNI_FALSE;
     }
+    shutdown_requested.store(false, std::memory_order_release);
     return JNI_TRUE;
 }
 
@@ -371,6 +363,9 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeRunFrame(
 
     audio.clear();
     retro_run();
+    if (shutdown_requested.load(std::memory_order_acquire)) {
+        return -1;
+    }
 
     AndroidBitmapInfo bitmap_info{};
     if (AndroidBitmap_getInfo(env, bitmap, &bitmap_info) == ANDROID_BITMAP_RESULT_SUCCESS &&

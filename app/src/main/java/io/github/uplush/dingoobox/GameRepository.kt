@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.core.content.edit
 import java.io.File
 import java.security.MessageDigest
@@ -60,10 +61,21 @@ data class ManagedSaveStateInfo(
 
 class GameRepository(private val context: Context) {
     private val contentResolver = context.contentResolver
-    private val statesDirectory = File(context.filesDir, "states").apply { mkdirs() }
-    private val coversDirectory = File(context.filesDir, "covers").apply { mkdirs() }
+    private val userDirectory = DingooUserDirectory(context).also {
+        check(it.ensureCreated()) { "Unable to create the DingooBox user data directory" }
+    }
+    private val statesDirectory = userDirectory.saveStatesDirectory
+    private val coversDirectory = userDirectory.coversDirectory
     private val metadata = context.getSharedPreferences("game_library", Context.MODE_PRIVATE)
-    val savesDirectory = File(context.filesDir, "saves").apply { mkdirs() }
+    private val saveStateMetadata =
+        DingooPreferenceRepository(context, userDirectory).settings("save_state_metadata")
+    private val saveStateKeys = mutableMapOf<String, String>()
+    val savesDirectory = userDirectory.savesDirectory
+
+    init {
+        migrateMissingFiles(File(context.filesDir, "saves"), savesDirectory)
+        migrateMissingFiles(File(context.filesDir, "covers"), coversDirectory)
+    }
 
     fun savedDirectory(): Uri? = metadata
         .getString(GAME_DIRECTORY_KEY, null)
@@ -127,14 +139,15 @@ class GameRepository(private val context: Context) {
     fun setCover(game: GameEntry, uri: Uri): Result<Unit> = runCatching {
         val mime = context.contentResolver.getType(uri).orEmpty()
         val extension = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; else -> "jpg" }
-        coversDirectory.listFiles { file -> file.nameWithoutExtension == game.id }.orEmpty().forEach { it.delete() }
-        val destination = File(coversDirectory, "${game.id}.$extension")
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) {
-                context.getString(R.string.main_read_cover_failed)
-            }
-            destination.outputStream().use(input::copyTo)
+        val imageData = context.contentResolver.openInputStream(uri).use { input ->
+            requireNotNull(input) { context.getString(R.string.main_read_cover_failed) }
+            input.readBytes()
         }
+        val coverId = gameCoverId(game.uri)
+        val contentId = sha256Hex(imageData).take(COVER_CONTENT_HASH_LENGTH)
+        deleteManagedCovers(game, keepFile = null)
+        val destination = File(coversDirectory, "${coverId}_${contentId}.$extension")
+        destination.writeBytes(imageData)
     }
 
     fun setDownloadedCover(game: GameEntry, imageData: ByteArray): Boolean {
@@ -142,12 +155,14 @@ class GameRepository(private val context: Context) {
             return false
         }
 
+        val coverId = gameCoverId(game.uri)
+        val contentId = sha256Hex(imageData).take(COVER_CONTENT_HASH_LENGTH)
         val temporaryFile = File(
             coversDirectory,
-            ".${game.id}.${System.nanoTime()}.cover-download"
+            ".$coverId.${System.nanoTime()}.cover-download"
         )
-        val destination = File(coversDirectory, "${game.id}.png")
-        val backup = File(coversDirectory, ".${game.id}.cover-backup")
+        val destination = File(coversDirectory, "${coverId}_${contentId}.png")
+        val backup = File(coversDirectory, ".$coverId.cover-backup")
 
         return try {
             temporaryFile.outputStream().buffered().use { output ->
@@ -156,9 +171,7 @@ class GameRepository(private val context: Context) {
             if (!isValidCoverFile(temporaryFile)) {
                 false
             } else {
-                val existingCovers = coversDirectory
-                    .listFiles { file -> file.isFile && file.nameWithoutExtension == game.id }
-                    .orEmpty()
+                val existingCovers = managedCovers(game)
 
                 backup.delete()
                 val destinationBackedUp = !destination.exists() || destination.renameTo(backup)
@@ -228,9 +241,9 @@ class GameRepository(private val context: Context) {
         .toList()
 
     fun stateFile(game: GameEntry, slot: SaveStateSlot): File =
-        File(File(statesDirectory, game.id).apply { mkdirs() }, "${slot.filePart}.state")
+        File(saveStateGameDirectory(game), "${slot.filePart}.state")
     fun previewFile(game: GameEntry, slot: SaveStateSlot): File =
-        File(File(statesDirectory, game.id).apply { mkdirs() }, "${slot.filePart}.png")
+        File(saveStateGameDirectory(game), "${slot.filePart}.png")
     fun deleteState(game: GameEntry, slot: SaveStateSlot): Boolean {
         val stateFile = stateFile(game, slot)
         val previewFile = previewFile(game, slot)
@@ -240,8 +253,25 @@ class GameRepository(private val context: Context) {
     }
     fun quickState(game: GameEntry): File = stateFile(game, SaveStateSlot.Quick)
 
-    private fun findCover(id: String): File? = coversDirectory
-        .listFiles { file -> file.isFile && file.nameWithoutExtension == id }.orEmpty().firstOrNull()
+    private fun findCover(id: String, uri: Uri? = null): File? {
+        val prefix = uri?.let { "${gameCoverId(it)}_" }
+        return coversDirectory.listFiles { file ->
+            file.isFile &&
+                (file.nameWithoutExtension == id || (prefix != null && file.name.startsWith(prefix)))
+        }.orEmpty().firstOrNull()
+    }
+
+    private fun managedCovers(game: GameEntry): List<File> {
+        val prefix = "${gameCoverId(game.uri)}_"
+        return coversDirectory.listFiles { file ->
+            file.isFile &&
+                (file.nameWithoutExtension == game.id || file.name.startsWith(prefix))
+        }.orEmpty().toList()
+    }
+
+    private fun deleteManagedCovers(game: GameEntry, keepFile: File?) {
+        managedCovers(game).filter { it != keepFile }.forEach(File::delete)
+    }
     private fun isValidCoverFile(file: File): Boolean {
         if (!file.isFile || file.length() <= 0L) return false
         return runCatching {
@@ -339,6 +369,21 @@ class GameRepository(private val context: Context) {
     }
 
     private fun queryGame(uri: Uri): GameEntry? {
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            val file = uri.path?.let(::File) ?: return null
+            if (!file.isFile) return null
+            if (!file.name.endsWith(".app", ignoreCase = true)) {
+                error(context.getString(R.string.main_select_min_game_file))
+            }
+            return createGameEntry(
+                uri = uri,
+                fileName = file.name,
+                sourceLocation = file.absolutePath,
+                size = file.length(),
+                modifiedAt = file.lastModified()
+            )
+        }
+
         val projection = arrayOf(
             OpenableColumns.DISPLAY_NAME,
             OpenableColumns.SIZE,
@@ -388,7 +433,7 @@ class GameRepository(private val context: Context) {
             modifiedAt = modifiedAt,
             lastPlayedAt = metadata.getLong("last_$id", 0L),
             playTimeMs = metadata.getLong("time_$id", 0L),
-            coverFile = findCover(id)
+            coverFile = findCover(id, uri)
         )
     }
 
@@ -411,9 +456,91 @@ class GameRepository(private val context: Context) {
         .joinToString("") { "%02x".format(it) }
     }
 
+    private fun gameCoverId(uri: Uri): String =
+        sha256Hex(uri.toString().toByteArray(Charsets.UTF_8))
+
+    private fun sha256Hex(data: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(data)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+
+    /** MiNiQ identifies save-state directories by the full SHA-256 of ROM data. */
+    private fun saveStateGameKey(game: GameEntry): String =
+        synchronized(saveStateKeys) {
+            saveStateKeys.getOrPut(game.uri.toString()) {
+                val digest = MessageDigest.getInstance("SHA-256")
+                contentResolver.openInputStream(game.uri).use { input ->
+                    requireNotNull(input) {
+                        context.getString(R.string.main_read_named_game_file_failed, game.fileName)
+                    }
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count <= 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                digest.digest().joinToString("") { byte ->
+                    "%02x".format(byte.toInt() and 0xFF)
+                }
+            }
+        }
+
+    private fun saveStateGameDirectory(game: GameEntry): File {
+        val gameKey = saveStateGameKey(game)
+        val target = File(statesDirectory, gameKey).apply { mkdirs() }
+
+        // Import both pre-unified and DingooBox 1.0.3 state locations. The
+        // originals remain as rollback copies and existing MiNiQ-format files win.
+        listOf(
+            File(File(context.filesDir, "states"), game.id),
+            context.getExternalFilesDir(null)?.let { File(File(it, "states"), game.id) }
+        ).filterNotNull().forEach { legacy ->
+            migrateMissingFiles(legacy, target)
+        }
+
+        saveStateMetadata.edit()
+            .putString("game_${gameKey}_name", game.title)
+            .putString("game_${gameKey}_uri", game.uri.toString())
+            .apply()
+        return target
+    }
+
+    /**
+     * Copies legacy private-storage data into the app-specific external
+     * directory without replacing files already created there. The source is
+     * deliberately retained as a rollback backup. Missing files are retried
+     * on the next repository creation if a copy is interrupted.
+     */
+    private fun migrateMissingFiles(source: File, destination: File) {
+        if (!source.isDirectory || source == destination) return
+        source.walkTopDown().forEach { sourceFile ->
+            val relativePath = sourceFile.relativeTo(source).path
+            if (relativePath.isEmpty()) return@forEach
+            val destinationFile = File(destination, relativePath)
+            runCatching {
+                if (sourceFile.isDirectory) {
+                    destinationFile.mkdirs()
+                } else if (!destinationFile.exists()) {
+                    destinationFile.parentFile?.mkdirs()
+                    sourceFile.copyTo(destinationFile, overwrite = false)
+                    destinationFile.setLastModified(sourceFile.lastModified())
+                }
+            }.onFailure { error ->
+                Log.w(
+                    STORAGE_LOG_TAG,
+                    "Unable to migrate ${sourceFile.absolutePath}",
+                    error
+                )
+            }
+        }
+    }
+
     private companion object {
         const val GAME_DIRECTORY_KEY = "game_directory"
         const val MAX_DOWNLOADED_COVER_SIZE_BYTES = 8 * 1024 * 1024
+        const val COVER_CONTENT_HASH_LENGTH = 16
+        const val STORAGE_LOG_TAG = "DingooStorage"
     }
 }
 

@@ -192,7 +192,28 @@ pub extern "C" fn retro_run() {
     emulator.set_buttons(buttons);
 
     if let Err(error) = emulator.tick() {
-        log::error!("Frame execution failed: {error}");
+        // Execution errors leave the guest at the same invalid PC. Retrying
+        // every frame only repeats the error forever and presents a white
+        // screen. Treat the failed content as ended so the frontend can
+        // unload it, flush persistent saves, and return to its library.
+        log::error!("Frame execution failed; requesting frontend shutdown: {error}");
+        callbacks::environment(
+            RETRO_ENVIRONMENT_SHUTDOWN,
+            ptr::null_mut(),
+        );
+        return;
+    }
+
+    // A Dingoo application returns from its main entry point when the player
+    // chooses its built-in Exit command. Tell the frontend that content ended
+    // instead of continuing to publish the core's empty fallback framebuffer.
+    if !emulator.is_running() {
+        log::info!("Content exited normally");
+        callbacks::environment(
+            RETRO_ENVIRONMENT_SHUTDOWN,
+            ptr::null_mut(),
+        );
+        return;
     }
 
     callbacks::video_refresh(

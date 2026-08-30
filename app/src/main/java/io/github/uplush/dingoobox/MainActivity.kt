@@ -66,12 +66,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleShortcutIntent(sourceIntent: Intent?) {
-        if (sourceIntent?.action != Intent.ACTION_VIEW) return
+        sourceIntent ?: return
+
+        val externalPath = EXTERNAL_GAME_PATH_EXTRAS
+            .firstNotNullOfOrNull { key ->
+                sourceIntent.getStringExtra(key)?.takeIf(String::isNotBlank)
+            }
+        if (sourceIntent.action != Intent.ACTION_VIEW && externalPath == null) return
 
         val shortcutUri = sourceIntent.data
         val legacyShortcutUri = shortcutUri?.scheme == SHORTCUT_SCHEME &&
             shortcutUri.host == SHORTCUT_GAME_AUTHORITY
         val gameUri = shortcutUri?.takeUnless { legacyShortcutUri }
+            ?: externalPath?.toGameUri()
         val gameId = when {
             legacyShortcutUri ->
                 shortcutUri?.lastPathSegment
@@ -85,6 +92,7 @@ class MainActivity : ComponentActivity() {
         sourceIntent.data = null
         sourceIntent.removeExtra(EXTRA_GAME_ID)
         sourceIntent.removeExtra(EXTRA_GAME_PATH)
+        EXTERNAL_GAME_PATH_EXTRAS.forEach(sourceIntent::removeExtra)
 
         if (
             gameUri == null &&
@@ -106,7 +114,19 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_GAME_ID = "game_id"
         const val SHORTCUT_SCHEME = "dingooemu"
         const val SHORTCUT_GAME_AUTHORITY = "game"
+
+        private val EXTERNAL_GAME_PATH_EXTRAS = listOf(
+            "ROM",
+            "rom",
+            "path",
+            EXTRA_GAME_PATH
+        )
     }
+}
+
+private fun String.toGameUri(): Uri {
+    val parsed = Uri.parse(this)
+    return if (parsed.scheme.isNullOrBlank()) Uri.fromFile(java.io.File(this)) else parsed
 }
 
 data class ShortcutLaunchRequest(

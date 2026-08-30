@@ -200,6 +200,14 @@ fun DingooApp(
 
         val game = request.gameUri?.let { gameUri ->
             games.firstOrNull { candidate -> candidate.uri == gameUri }
+                // Android front-ends commonly pass a raw /storage path. On
+                // scoped-storage devices, reuse the matching SAF library URI
+                // instead of requesting broad all-files access.
+                ?: gameUri.lastPathSegment?.let { externalFileName ->
+                    games.singleOrNull { candidate ->
+                        candidate.fileName.equals(externalFileName, ignoreCase = true)
+                    }
+                }
                 ?: repository.game(gameUri).getOrNull()
         } ?: games.firstOrNull { candidate ->
             !request.gameId.isNullOrBlank() && candidate.id == request.gameId

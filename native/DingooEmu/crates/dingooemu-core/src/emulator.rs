@@ -961,6 +961,37 @@ impl Emulator {
         true
     }
 
+    /// Implements the uC/OS-II OSTaskDel semantics used by Dingoo SDK apps.
+    /// Priority 0xff means the currently executing task. While a guest task
+    /// runs, its CPU is temporarily installed as `self.cpu`, so stopping that
+    /// CPU correctly terminates either the guest task or the main application.
+    fn delete_guest_task(&mut self, priority: u32) -> bool {
+        const OS_PRIO_SELF: u32 = 0xff;
+
+        if priority == OS_PRIO_SELF {
+            self.cpu.stop();
+            return true;
+        }
+
+        if let Some(task_index) = self.active_task {
+            if self.tasks[task_index].priority == priority {
+                self.cpu.stop();
+                return true;
+            }
+        }
+
+        if let Some(task) = self
+            .tasks
+            .iter_mut()
+            .find(|task| task.priority == priority)
+        {
+            task.cpu.stop();
+            return true;
+        }
+
+        false
+    }
+
     fn set_active_wait(&mut self, wait: TaskWait) {
         if let Some(task_index) = self.active_task {
             self.tasks[task_index].wait = Some(wait);
@@ -1021,7 +1052,7 @@ impl Emulator {
         true
     }
 
-    fn read_guest_c_string(&self, ptr: u32) -> String {
+    fn read_guest_c_string_bytes(&self, ptr: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
         let mut offset = 0u32;
         while let Ok(b) = self.memory.read_u8(ptr.wrapping_add(offset)) {
@@ -1034,10 +1065,22 @@ impl Emulator {
                 break;
             }
         }
-        String::from_utf8_lossy(&bytes).into_owned()
+        bytes
     }
 
-    fn read_guest_w_string(&self, ptr: u32) -> String {
+    fn read_guest_c_string(&self, ptr: u32) -> String {
+        String::from_utf8_lossy(&self.read_guest_c_string_bytes(ptr)).into_owned()
+    }
+
+    fn guest_c_string_hex(&self, ptr: u32) -> String {
+        self.read_guest_c_string_bytes(ptr)
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn read_guest_w_string_words(&self, ptr: u32) -> Vec<u16> {
         let mut words = Vec::new();
         let mut offset = 0u32;
         while let Ok(w) = self.memory.read_u16(ptr.wrapping_add(offset)) {
@@ -1050,7 +1093,19 @@ impl Emulator {
                 break;
             }
         }
-        String::from_utf16_lossy(&words)
+        words
+    }
+
+    fn read_guest_w_string(&self, ptr: u32) -> String {
+        String::from_utf16_lossy(&self.read_guest_w_string_words(ptr))
+    }
+
+    fn guest_w_string_hex(&self, ptr: u32) -> String {
+        self.read_guest_w_string_words(ptr)
+            .iter()
+            .map(|word| format!("{word:04X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn guest_printf_arg(&self, index: usize) -> Result<u32> {
@@ -1568,10 +1623,18 @@ impl Emulator {
             }
         }
 
-        match self.open_resource_file(name) {
+        let handle = match self.open_resource_file(name) {
             0 => self.open_host_file(name),
             handle => handle,
+        };
+        if handle == 0 {
+            // Keep this at warning level: Android's libretro bridge filters
+            // trace/info logs, and the missing guest filename is essential
+            // for distinguishing a firmware-return request from an ordinary
+            // optional resource lookup.
+            log::warn!("Guest file open failed: {name} (mode: {mode})");
         }
+        handle
     }
 
     fn flush_save_file(&mut self, handle: u32) -> std::io::Result<()> {

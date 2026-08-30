@@ -12,24 +12,30 @@ import android.graphics.Rect
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
-import android.media.MediaScannerConnection
-import android.os.Environment
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,6 +63,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.locks.LockSupport
 import kotlin.math.max
@@ -81,17 +89,41 @@ fun EmulationScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
     val gameAudioFocus = remember(context) { GameAudioFocus(context) }
+    val screenshotManager = remember(context) { ScreenshotManager(context) }
     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val gameUri = game.uri.toString()
     val bitmap = remember(gameUri) { createBitmap(320, 240, Bitmap.Config.RGB_565) }
     val bitmapView = remember(gameUri) { BitmapView(context, bitmap) }
+    var startedAt by remember(gameUri) { mutableStateOf<Long?>(null) }
     val session = remember(gameUri, initialStateSlot) {
         EmulationSession(
             romData = repository.readGame(game).getOrNull(),
             romName = game.fileName,
             saveDirectory = repository.savesDirectory,
             bitmap = bitmap,
-            view = bitmapView
+            view = bitmapView,
+            onCoreShutdown = {
+                bitmapView.post {
+                    // A state captured after the emulated application has
+                    // returned only resumes to its blank exit framebuffer.
+                    // Keep manual/quick states, but remove stale auto-resume
+                    // data. Native deinitialization still flushes SRAM/EEPROM.
+                    if (!repository.deleteState(game, SaveStateSlot.Auto)) {
+                        Log.w(
+                            "DingooLifecycle",
+                            "Unable to remove stale auto state after game exit"
+                        )
+                    }
+                    startedAt?.let { startTime ->
+                        repository.addPlayTime(
+                            game,
+                            System.currentTimeMillis() - startTime
+                        )
+                    }
+                    startedAt = null
+                    onExit()
+                }
+            }
         )
     }
     val currentSettings by rememberUpdatedState(settings)
@@ -99,6 +131,7 @@ fun EmulationScreen(
     var saveStateScreenMode by remember { mutableStateOf<SaveStateScreenMode?>(null) }
     var saveStateRevision by remember { mutableIntStateOf(0) }
     var screenshotMessage by remember { mutableStateOf<String?>(null) }
+    var pendingScreenshotBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var fastForward by remember { mutableStateOf(false) }
     var editorPortrait by remember { mutableStateOf<Boolean?>(null) }
     // MiNiQ recreates the emulation/pause subtree after closing its separate
@@ -132,7 +165,6 @@ fun EmulationScreen(
         repository.saveStateSlots(game)
     }
     var sessionStarted by remember(session) { mutableStateOf(false) }
-    var startedAt by remember(session) { mutableStateOf<Long?>(null) }
 
     fun startPreparedGame(message: String? = null) {
         if (!sessionStarted) {
@@ -173,6 +205,28 @@ fun EmulationScreen(
         gameAudioFocus.request()
         session.resume()
         focusRequester.requestFocus()
+    }
+    val saveScreenshotLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        val pendingBitmap = pendingScreenshotBitmap
+        if (uri == null) {
+            pendingScreenshotBitmap = null
+            pauseMenu = true
+        } else {
+            val saved = pendingBitmap != null && synchronized(pendingBitmap) {
+                screenshotManager.saveToUri(pendingBitmap, uri)
+            }
+            pendingScreenshotBitmap = null
+            screenshotMessage = localizedResources.getString(
+                if (saved) {
+                    R.string.main_screenshot_saved
+                } else {
+                    R.string.main_screenshot_failed
+                }
+            )
+            resume()
+        }
     }
     fun openPause() {
         restoreControllerTouchPage = false
@@ -227,14 +281,28 @@ fun EmulationScreen(
         }
         showStatusToast(message)
     }
-    fun takeScreenshot() {
+    fun saveScreenshotDirectly() {
         screenshotMessage = localizedResources.getString(
-            if (saveScreenshot(context, bitmap)) {
+            if (synchronized(bitmap) { screenshotManager.save(bitmap) }) {
                 R.string.main_screenshot_saved
             } else {
                 R.string.main_screenshot_failed
             }
         )
+    }
+
+    fun requestScreenshotDestination() {
+        pendingScreenshotBitmap = bitmap
+        val baseName = game.fileName
+            .substringBeforeLast(".")
+            .takeIf { it.isNotBlank() }
+            ?: "DingooBox_Screenshot"
+        val timestamp = SimpleDateFormat(
+            "yyyy-MM-dd-HH-mm-ss",
+            Locale.US
+        ).format(Date())
+        pauseMenu = false
+        saveScreenshotLauncher.launch("$baseName  $timestamp.png")
     }
     fun resetGame() {
         session.reset()
@@ -366,7 +434,7 @@ fun EmulationScreen(
                     onFastForward = ::toggleFastForward,
                     onQuickSave = ::quickSave,
                     onQuickLoad = ::quickLoad,
-                    onScreenshot = ::takeScreenshot,
+                    onScreenshot = ::saveScreenshotDirectly,
                     onReset = ::resetGame
                 )
             }
@@ -404,7 +472,7 @@ fun EmulationScreen(
                         onFastForward = ::toggleFastForward,
                         onQuickSave = ::quickSave,
                         onQuickLoad = ::quickLoad,
-                        onScreenshot = ::takeScreenshot,
+                        onScreenshot = ::saveScreenshotDirectly,
                         onReset = ::resetGame
                     )
                 }
@@ -435,6 +503,17 @@ fun EmulationScreen(
                         .padding(
                             top = if (portrait) 38.dp else 30.dp,
                             end = 104.dp
+                        )
+                )
+                GameOverlayControls(
+                    fastForwardEnabled = fastForward,
+                    onPause = ::openPause,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .symmetricCutoutPadding()
+                        .padding(
+                            top = if (portrait) 24.dp else 16.dp,
+                            end = 16.dp
                         )
                 )
             }
@@ -523,8 +602,7 @@ fun EmulationScreen(
                     },
                     onExit = ::exitGame,
                     onScreenshot = {
-                        takeScreenshot()
-                        resume()
+                        requestScreenshotDestination()
                     },
                     onReset = {
                         resetGame()
@@ -613,6 +691,63 @@ fun EmulationScreen(
         }
     }
 
+}
+
+@Composable
+private fun GameOverlayControls(
+    fastForwardEnabled: Boolean,
+    onPause: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (fastForwardEnabled) {
+            Icon(
+                imageVector = Icons.Filled.FastForward,
+                contentDescription = appStringResource(
+                    R.string.emulation_fast_forward_description
+                ),
+                modifier = Modifier.size(26.dp),
+                tint = ComposeColor.White.copy(alpha = 0.72f)
+            )
+        }
+        GamePauseButton(onClick = onPause)
+    }
+}
+
+@Composable
+private fun GamePauseButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed = interactionSource.collectIsPressedAsState().value
+    val buttonScale = animateFloatAsState(
+        targetValue = if (isPressed) 1.50f else 1.0f,
+        animationSpec = tween(
+            durationMillis = if (isPressed) 70 else 100,
+            easing = FastOutSlowInEasing
+        ),
+        label = "PauseButtonScale"
+    ).value
+
+    IconButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = modifier.size(48.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Pause,
+            contentDescription = appStringResource(R.string.emulation_pause_game),
+            modifier = Modifier
+                .size(28.dp)
+                .scale(buttonScale),
+            tint = ComposeColor.White.copy(alpha = 0.72f)
+        )
+    }
 }
 
 @Composable
@@ -835,15 +970,6 @@ private fun savePreview(bitmap: Bitmap, destination: File) {
     }
 }
 
-private fun saveScreenshot(context: Context, bitmap: Bitmap): Boolean = runCatching {
-    val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "DingooBox").apply { mkdirs() }
-    val file = File(directory, "DingooBox-${System.currentTimeMillis()}.png")
-    file.outputStream().use { output ->
-        synchronized(bitmap) { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
-    }
-    MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("image/png"), null)
-}.isSuccess
-
 @SuppressLint("ViewConstructor")
 private class BitmapView(context: Context, private val bitmap: Bitmap) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = false }
@@ -906,7 +1032,8 @@ private class EmulationSession(
     romName: String,
     saveDirectory: File,
     private val bitmap: Bitmap,
-    private val view: View
+    private val view: View,
+    private val onCoreShutdown: () -> Unit
 ) {
     @Volatile private var running = false
     @Volatile private var paused = false
@@ -1001,6 +1128,12 @@ private class EmulationSession(
                 continue
             }
             val audioSamples = synchronized(bitmap) { NativeBridge.nativeRunFrame(bitmap, audioBuffer) }
+            if (audioSamples == NativeBridge.RUN_FRAME_SHUTDOWN) {
+                Log.i(CORE_LIFECYCLE_LOG_TAG, "Game requested frontend shutdown")
+                running = false
+                onCoreShutdown()
+                break
+            }
             if (audioSamples > 0) {
                 framesWithoutAudio = 0
                 if (!firstAudioBufferLogged) {
@@ -1185,6 +1318,7 @@ private class EmulationSession(
     }
 
     private companion object {
+        const val CORE_LIFECYCLE_LOG_TAG = "DingooLifecycle"
         const val AUDIO_LOG_TAG = "DingooAudio"
     }
 }

@@ -1,6 +1,14 @@
 use super::{Emulator, HandlerResult};
 use crate::error::Result;
 
+fn is_firmware_return_request(name_words: &[u16], mode: &str) -> bool {
+    // Observed when some Dingoo A320 titles choose their built-in Exit item.
+    // The firmware hand-off reaches fsys_fopenW with this invalid UTF-16
+    // sentinel (an unpaired low surrogate followed by U+80AA), then displays
+    // "resource file could not be loaded" forever when no Dingoo shell exists.
+    mode == "rb" && name_words == [0xDE88, 0x80AA]
+}
+
 pub(super) fn handle(emu: &mut Emulator, func_name: &str) -> Result<HandlerResult> {
     match func_name {
         "get_dl_handle" => {
@@ -16,6 +24,12 @@ pub(super) fn handle(emu: &mut Emulator, func_name: &str) -> Result<HandlerResul
                 .as_deref()
                 .map(|name| emu.open_resource_file(name))
                 .unwrap_or(0);
+            if handle == 0 {
+                match name.as_deref() {
+                    Some(name) => log::warn!("Embedded resource open failed: {name}"),
+                    None => log::warn!("Embedded resource open failed: invalid name pointer"),
+                }
+            }
             emu.cpu.regs.write(2, handle);
         }
         "dl_res_get_size" => {
@@ -41,17 +55,40 @@ pub(super) fn handle(emu: &mut Emulator, func_name: &str) -> Result<HandlerResul
             emu.cpu.regs.write(2, 0);
         }
         "fopen" | "fsys_fopen" => {
-            let name = emu.read_guest_c_string(emu.cpu.regs.read(4));
+            let name_ptr = emu.cpu.regs.read(4);
+            let name = emu.read_guest_c_string(name_ptr);
             let mode = emu.read_guest_c_string(emu.cpu.regs.read(5));
             let handle = emu.open_guest_file(&name, &mode);
+            if handle == 0 {
+                let raw_name = emu.guest_c_string_hex(name_ptr);
+                log::warn!(
+                    "Guest filename bytes: api={func_name} ptr={name_ptr:#010x} hex=[{raw_name}]"
+                );
+            }
             emu.cpu.regs.write(2, handle);
             log::trace!("  {func_name}({name}, {mode}) = {handle}");
         }
         "fsys_fopenW" => {
-            let name = emu.read_guest_w_string(emu.cpu.regs.read(4));
+            let name_ptr = emu.cpu.regs.read(4);
+            let name_words = emu.read_guest_w_string_words(name_ptr);
+            let name = String::from_utf16_lossy(&name_words);
             let mode = emu.read_guest_w_string(emu.cpu.regs.read(5));
             log::trace!("  fsys_fopenW({name}, {mode})");
+            if is_firmware_return_request(&name_words, &mode) {
+                log::warn!(
+                    "Dingoo firmware return request detected; stopping content for frontend shutdown"
+                );
+                emu.cpu.regs.write(2, 0);
+                emu.cpu.stop();
+                return Ok(HandlerResult::Complete);
+            }
             let handle = emu.open_guest_file(&name, &mode);
+            if handle == 0 {
+                let raw_name = emu.guest_w_string_hex(name_ptr);
+                log::warn!(
+                    "Guest filename words: api=fsys_fopenW ptr={name_ptr:#010x} utf16=[{raw_name}]"
+                );
+            }
             emu.cpu.regs.write(2, handle);
         }
         "fclose" | "fsys_fclose" | "fsys_fcloseW" => {
@@ -129,4 +166,16 @@ pub(super) fn handle(emu: &mut Emulator, func_name: &str) -> Result<HandlerResul
         _ => return Ok(HandlerResult::NotHandled),
     }
     Ok(HandlerResult::Complete)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_firmware_return_request;
+
+    #[test]
+    fn recognizes_observed_firmware_return_sentinel() {
+        assert!(is_firmware_return_request(&[0xDE88, 0x80AA], "rb"));
+        assert!(!is_firmware_return_request(&[0xDE88, 0x80AA], "wb"));
+        assert!(!is_firmware_return_request(&[b'a' as u16], "rb"));
+    }
 }

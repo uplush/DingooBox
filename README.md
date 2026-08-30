@@ -4,9 +4,32 @@
 [AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu) libretro 核心构建。
 界面使用 Jetpack Compose 和 Material 3，原生桥接层通过 JNI 驱动模拟核心。
 
-> 当前版本：`1.0.1`
+> 当前版本：`1.0.2`
 >
 > Android 包名：`io.github.uplush.dingoobox`
+
+## 安卓前端调用
+
+DingooBox 支持天马 G 等安卓前端通过 `VIEW` URI 或 ROM 路径参数直接启动
+Dingoo `.app` 游戏。建议先将 ROM 所在目录加入 DingooBox 游戏库，这样在
+Android 分区存储环境下无需申请“所有文件访问权限”。
+
+```text
+extensions: app
+launch: am start
+ -n io.github.uplush.dingoobox/.MainActivity
+ -a android.intent.action.VIEW
+ -d file://{file.path}
+```
+
+也可以使用天马 G 常见的 `ROM` 参数：
+
+```text
+am start -n io.github.uplush.dingoobox/.MainActivity -e ROM "{file.path}"
+```
+
+同时兼容 `rom`、`path`、`game_path` 参数名及 `content://` URI。从外部前端
+启动的游戏退出后，会返回调用前端。
 
 ## 主要功能
 
@@ -24,8 +47,14 @@
 - 屏幕方向键、A/B/X/Y、L/R、开始和选择键
 - Android 实体手柄按键支持
 - MiNiQ 全屏四页 PauseMenu：暂停菜单、游戏信息、应用设置、控制设置
+- 横屏、竖屏游戏画面右上角均提供 MiNiQ 同款 PauseMenu 触控图标
 - MiNiQ 全屏保存/读取页、快速存档、五个手动槽、自动续玩提示及统一存档管理器
+- 与 MiNiQ 完全对应的用户数据目录和命名：即时存档位于
+  `Android/data/io.github.uplush.dingoobox/files/savestates/<ROM SHA-256>/`，
+  文件名为 `auto.state`、`quick.state`、`slot1.state` 至 `slot5.state`
 - 快进、截图、重启、沉浸式全屏、比例/过滤、FPS/速度叠加
+- MiNiQ 式截图保存：暂停菜单截图会打开系统“另存为”界面，让用户选择路径；
+  手柄截图快捷键直接保存到系统相册 `Pictures/DingooBox`
 - 仅包含 `arm64-v8a`，原生库按 16 KB 页面大小对齐
 
 ## 支持环境
@@ -39,8 +68,17 @@
 ## 构建
 
 仓库包含供 `arm64-v8a` 使用的预编译 `libdingooemu.so` 和
-`libc++_shared.so`。Gradle 会使用 NDK/CMake 编译轻量 JNI 前端，常规构建
-不需要重新编译 Rust 模拟器核心：
+`libc++_shared.so`。但首次构建 1.0.2 必须先重新编译一次 Rust 核心，才能将
+游戏内“退出游戏”自动返回修复写入 `libdingooemu.so`：
+
+```powershell
+rustup target add aarch64-linux-android
+cargo install cargo-ndk
+$env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
+.\scripts\build-core.ps1
+```
+
+随后构建 APK：
 
 ```bash
 ./gradlew assembleDebug

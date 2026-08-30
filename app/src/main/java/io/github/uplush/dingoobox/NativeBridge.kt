@@ -3,6 +3,8 @@ package io.github.uplush.dingoobox
 import android.graphics.Bitmap
 
 object NativeBridge {
+    const val RUN_FRAME_SHUTDOWN = -1
+
     init {
         System.loadLibrary("dingoo_jni_live")
     }
