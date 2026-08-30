@@ -1,6 +1,13 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$CoreDir = Join-Path $ProjectDir "native\DingooEmu"
+$CoreManifest = Join-Path $CoreDir "Cargo.toml"
+
+if (-not (Test-Path -LiteralPath $CoreManifest)) {
+    throw "DingooEmu submodule is not initialized. Run: git submodule update --init --recursive"
+}
+
 if (-not $env:ANDROID_NDK_HOME) {
     throw "ANDROID_NDK_HOME must point to Android NDK 28.2.13676358."
 }
@@ -11,7 +18,7 @@ if (-not (Get-Command cargo-ndk -ErrorAction SilentlyContinue)) {
     throw "cargo-ndk is required."
 }
 
-Push-Location (Join-Path $ProjectDir "native\DingooEmu")
+Push-Location $CoreDir
 try {
     $PreviousRustFlags = $env:RUSTFLAGS
     $env:RUSTFLAGS = "$PreviousRustFlags -C link-arg=-Wl,-z,max-page-size=16384".Trim()

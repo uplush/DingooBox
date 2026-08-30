@@ -67,27 +67,39 @@ am start -n io.github.uplush.dingoobox/.MainActivity -e ROM "{file.path}"
 
 ## 构建
 
-仓库包含供 `arm64-v8a` 使用的预编译 `libdingooemu.so` 和
-`libc++_shared.so`。但首次构建 1.0.2 必须先重新编译一次 Rust 核心，才能将
-游戏内“退出游戏”自动返回修复写入 `libdingooemu.so`：
+DingooEmu 核心通过 Git Submodule 集成在 `native/DingooEmu`，主仓库会锁定到
+经过 DingooBox 验证的核心提交。
 
-```powershell
-rustup target add aarch64-linux-android
-cargo install cargo-ndk
-$env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
-.\scripts\build-core.ps1
+首次克隆请使用：
+
+```bash
+git clone --recurse-submodules https://github.com/uplush/DingooBox.git
+cd DingooBox
 ```
 
-随后构建 APK：
+如果已经克隆过仓库，或核心目录为空，请执行：
+
+```bash
+git submodule update --init --recursive
+```
+
+仓库同时包含供 `arm64-v8a` 使用的预编译 `libdingooemu.so` 和
+`libc++_shared.so`，可以直接构建 APK：
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-生成文件位于 `app/build/outputs/apk/debug/app-debug.apk`。Debug 与 Release
-构建使用相同的正式包名，不再追加 `.debug`。
+Windows PowerShell：
 
-存档失败诊断：清空日志、复现一次失败，再导出两个原生标签：
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+生成文件位于 `app/build/outputs/apk/debug/app-debug.apk`。Debug 与 Release
+构建使用相同的正式包名，不追加 `.debug`。
+
+存档失败诊断：清空日志、复现一次失败，再导出原生标签：
 
 ```powershell
 adb logcat -c
@@ -97,24 +109,28 @@ adb logcat -d -s DingooState:I DingooCore:E *:S
 
 ## 重新构建 DingooEmu 核心
 
+修改或更新核心源码后，需要重新生成 `libdingooemu.so`。
+
 Linux/macOS：
 
 ```bash
+git submodule update --init --recursive
 rustup target add aarch64-linux-android
 cargo install cargo-ndk
 ANDROID_NDK_HOME=/path/to/ndk/28.2.13676358 ./scripts/build-core.sh
+./gradlew assembleDebug
 ```
 
 Windows PowerShell：
 
 ```powershell
+git submodule update --init --recursive
 rustup target add aarch64-linux-android
 cargo install cargo-ndk
-$env:ANDROID_NDK_HOME = "C:\path\to\ndk\28.2.13676358"
-.\scripts\build-core.ps1
+$env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-core.ps1
+.\gradlew.bat assembleDebug
 ```
-
-然后运行 `./gradlew assembleDebug`（Windows 使用 `.\gradlew.bat assembleDebug`）。
 
 ## 已知限制
 
