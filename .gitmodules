@@ -1,0 +1,4 @@
+[submodule "native/DingooEmu"]
+	path = native/DingooEmu
+	url = https://github.com/uplush/DingooEmu.git
+	branch = dingoobox-integration
