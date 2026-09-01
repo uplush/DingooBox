@@ -57,6 +57,8 @@
     <string name="settings_auto_save_title">Auto-save on exit</string>
     <string name="settings_auto_save_description">Automatically create a recovery save state when exiting a game</string>
     <string name="settings_auto_save_game_only_description">This setting can only be adjusted while a game is running</string>
+    <string name="settings_frame_rate_enhancement_title">Frame rate enhancement</string>
+    <string name="settings_frame_rate_enhancement_description">Improve frame rates in supported games</string>
     <string name="settings_fast_forward_multiplier_title">Fast-forward multiplier</string>
     <string name="settings_fast_forward_multiplier_description">Set the running speed used when fast-forward is enabled</string>
     <string name="fast_forward_unlimited">Unlimited</string>
