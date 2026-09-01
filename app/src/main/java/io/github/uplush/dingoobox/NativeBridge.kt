@@ -12,7 +12,8 @@ object NativeBridge {
     external fun nativeInitialize(
         romData: ByteArray,
         romName: String,
-        saveDirectory: String
+        saveDirectory: String,
+        frameRateEnhancementEnabled: Boolean
     ): Boolean
     external fun nativeRunFrame(bitmap: Bitmap, audioBuffer: ShortArray): Int
     external fun nativeSetButton(buttonId: Int, pressed: Boolean)

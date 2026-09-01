@@ -57,6 +57,8 @@
     <string name="settings_auto_save_title">退出时自动保存</string>
     <string name="settings_auto_save_description">退出游戏时自动创建恢复存档</string>
     <string name="settings_auto_save_game_only_description">仅在游戏中可以调整该设置</string>
+    <string name="settings_frame_rate_enhancement_title">帧率增强</string>
+    <string name="settings_frame_rate_enhancement_description">提升部分游戏帧率</string>
     <string name="settings_fast_forward_multiplier_title">游戏加速倍率</string>
     <string name="settings_fast_forward_multiplier_description">设置开启游戏加速时的运行速度</string>
     <string name="fast_forward_unlimited">不限制</string>

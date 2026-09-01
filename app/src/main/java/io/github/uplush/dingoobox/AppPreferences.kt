@@ -47,6 +47,7 @@ data class AppSettingsState(
     val volumePercent: Int = 100,
     val soundSofteningEnabled: Boolean = false,
     val soundSofteningPercent: Int = 60,
+    val frameRateEnhancementEnabled: Boolean = false,
     val autoSaveEnabled: Boolean = false,
     val fastForwardMultiplier: Int = 2,
     val virtualControlsVisible: Boolean = true,
@@ -87,6 +88,10 @@ class AppPreferences(context: Context) {
         soundSofteningPercent = preferences
             .getInt("sound_softening_level_percent", 60)
             .coerceIn(5, 95),
+        frameRateEnhancementEnabled = preferences.getBoolean(
+            "frame_rate_enhancement_enabled",
+            false
+        ),
         autoSaveEnabled = preferences.getBoolean("auto_save_state_enabled", false),
         fastForwardMultiplier = normalizeFastForwardMultiplier(
             preferences.getInt("fast_forward_multiplier", 2)
@@ -113,6 +118,10 @@ class AppPreferences(context: Context) {
             putInt(
                 "sound_softening_level_percent",
                 settings.soundSofteningPercent.coerceIn(5, 95)
+            )
+            putBoolean(
+                "frame_rate_enhancement_enabled",
+                settings.frameRateEnhancementEnabled
             )
             putBoolean("auto_save_state_enabled", settings.autoSaveEnabled)
             putInt(
@@ -300,7 +309,7 @@ class AppPreferences(context: Context) {
 
     companion object {
         private const val SETTINGS_SCHEMA_VERSION_KEY = "dingoo_settings_schema_version"
-        private const val SETTINGS_SCHEMA_VERSION = 22
+        private const val SETTINGS_SCHEMA_VERSION = 23
 
         private fun normalizeFastForwardMultiplier(value: Int): Int = when (value) {
             0, 2, 3, 4 -> value

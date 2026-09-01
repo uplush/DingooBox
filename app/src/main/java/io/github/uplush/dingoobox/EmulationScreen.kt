@@ -100,6 +100,7 @@ fun EmulationScreen(
             romData = repository.readGame(game).getOrNull(),
             romName = game.fileName,
             saveDirectory = repository.savesDirectory,
+            frameRateEnhancementEnabled = settings.frameRateEnhancementEnabled,
             bitmap = bitmap,
             view = bitmapView,
             onCoreShutdown = {
@@ -1031,6 +1032,7 @@ private class EmulationSession(
     romData: ByteArray?,
     romName: String,
     saveDirectory: File,
+    frameRateEnhancementEnabled: Boolean,
     private val bitmap: Bitmap,
     private val view: View,
     private val onCoreShutdown: () -> Unit
@@ -1061,7 +1063,8 @@ private class EmulationSession(
         initialized = romData != null && NativeBridge.nativeInitialize(
             romData,
             romName,
-            saveDirectory.absolutePath
+            saveDirectory.absolutePath,
+            frameRateEnhancementEnabled
         )
         audioTrack = if (initialized) createAudioTrack() else null
     }

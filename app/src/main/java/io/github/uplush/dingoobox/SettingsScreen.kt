@@ -427,6 +427,14 @@ private fun ColumnScope.AdvancedSettings(
     onFastForward: () -> Unit
 ) {
     SwitchSettingRow(
+        title = appStringResource(R.string.settings_frame_rate_enhancement_title),
+        description = appStringResource(R.string.settings_frame_rate_enhancement_description),
+        checked = settings.frameRateEnhancementEnabled,
+        enabled = !embeddedInPauseMenu,
+        onCheckedChange = { update(settings.copy(frameRateEnhancementEnabled = it)) }
+    )
+    HorizontalDivider()
+    SwitchSettingRow(
         title = appStringResource(R.string.settings_auto_save_title),
         description = appStringResource(
             if (embeddedInPauseMenu) {
