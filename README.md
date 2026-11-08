@@ -64,6 +64,6 @@ Windows 下最后一条命令换成 `.\gradlew.bat assembleDebug`，工程请放
 
 ## 感谢与许可
 
-感谢 [AloysHF](https://github.com/AloysHF) 开发 [DingooEmu](https://github.com/AloysHF/DingooEmu)，丁果盒的模拟能力来自这个项目。Android 界面和交互从 [MiNiQ](https://github.com/uplush/MiNiQ) 适配而来，具体来源记录在 [MINIQ_UI_PORT.md](MINIQ_UI_PORT.md)。
+感谢 [AloysHF](https://github.com/AloysHF) 开发 [DingooEmu](https://github.com/AloysHF/DingooEmu)，丁果盒的模拟能力来自这个项目。
 
 Android 前端使用 [BSD 3-Clause License](LICENSE)。DingooEmu 及其依赖保留各自的许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.md)、[核心许可证](native/DingooEmu/LICENSE) 和 [核心第三方许可](native/DingooEmu/THIRD_PARTY_LICENSES.md)。Dingoo、丁果 A320 等名称及商标归各自权利人所有。
