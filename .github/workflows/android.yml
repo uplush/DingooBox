@@ -23,7 +23,7 @@ jobs:
           chmod +x scripts/verify-core.sh
           ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" ./scripts/verify-core.sh
       - run: chmod +x gradlew
-      - run: ./gradlew assembleDebug
+      - run: ./gradlew testDebugUnitTest assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: DingooBox-debug

@@ -72,6 +72,14 @@ class GameRepository(private val context: Context) {
     private val saveStateKeys = mutableMapOf<String, String>()
     val savesDirectory = userDirectory.savesDirectory
 
+    fun hasLegacySaveStates(): Boolean = CoreSaveStates.hasLegacyStates(
+        statesDirectory,
+        listOfNotNull(
+            File(context.filesDir, "states"),
+            context.getExternalFilesDir(null)?.let { File(it, "states") }
+        )
+    )
+
     init {
         migrateMissingFiles(File(context.filesDir, "saves"), savesDirectory)
         migrateMissingFiles(File(context.filesDir, "covers"), coversDirectory)
@@ -488,16 +496,10 @@ class GameRepository(private val context: Context) {
 
     private fun saveStateGameDirectory(game: GameEntry): File {
         val gameKey = saveStateGameKey(game)
-        val target = File(statesDirectory, gameKey).apply { mkdirs() }
-
-        // Import both pre-unified and DingooBox 1.0.3 state locations. The
-        // originals remain as rollback copies and existing MiNiQ-format files win.
-        listOf(
-            File(File(context.filesDir, "states"), game.id),
-            context.getExternalFilesDir(null)?.let { File(File(it, "states"), game.id) }
-        ).filterNotNull().forEach { legacy ->
-            migrateMissingFiles(legacy, target)
-        }
+        // Upstream uses a v4 snapshot inside a libretro v1 envelope. Never
+        // import v3 snapshots or overwrite them with an incompatible auto-save.
+        val target = CoreSaveStates.gameDirectory(statesDirectory, gameKey)
+            .apply { mkdirs() }
 
         saveStateMetadata.edit()
             .putString("game_${gameKey}_name", game.title)

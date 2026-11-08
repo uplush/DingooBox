@@ -40,6 +40,15 @@ fun DingooApp(
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
     val repository = remember { GameRepository(context) }
+    val coreMigrationPreferences = remember(context) {
+        context.getSharedPreferences("core_migrations", android.content.Context.MODE_PRIVATE)
+    }
+    var legacyStateNoticeVisible by rememberSaveable {
+        mutableStateOf(
+            !coreMigrationPreferences.getBoolean(CoreSaveStates.GENERATION, false) &&
+                repository.hasLegacySaveStates()
+        )
+    }
     val appPreferences = remember { AppPreferences(context) }
     val homePreferences = remember(context) {
         DingooPreferenceRepository(context).settings("home_sort")
@@ -186,7 +195,8 @@ fun DingooApp(
         if (coverTarget != null) coverPicker.launch(arrayOf("image/*"))
     }
     LaunchedEffect(sortMode) { refresh() }
-    LaunchedEffect(shortcutLaunchRequest) {
+    LaunchedEffect(shortcutLaunchRequest, legacyStateNoticeVisible) {
+        if (legacyStateNoticeVisible) return@LaunchedEffect
         val request = shortcutLaunchRequest ?: return@LaunchedEffect
         onShortcutLaunchConsumed()
 
@@ -424,6 +434,28 @@ fun DingooApp(
         AppPage.LayoutEditor -> VirtualControlEditorScreen(editorPortrait, editorGameKey) {
             page = AppPage.Controls
         }
+            }
+        }
+    }
+
+    if (legacyStateNoticeVisible) {
+        val dismissNotice = {
+            coreMigrationPreferences.edit().putBoolean(CoreSaveStates.GENERATION, true).apply()
+            legacyStateNoticeVisible = false
+        }
+        MiniQStandardDialog(onDismissRequest = dismissNotice) {
+            Column(
+                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    appStringResource(R.string.core_upgrade_title),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(appStringResource(R.string.core_upgrade_message))
+                TextButton(onClick = dismissNotice, modifier = Modifier.align(Alignment.End)) {
+                    Text(appStringResource(R.string.about_close))
+                }
             }
         }
     }

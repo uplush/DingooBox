@@ -1,5 +1,13 @@
 # Save-state diagnostics
 
+## 1.1.0 official upstream format
+
+The pinned upstream core uses internal snapshot version 4 and an 8-byte
+libretro version-1 envelope. An A320 snapshot is now 50,331,656 bytes.
+New states live under `savestates/dingooemu-v4-libretro-v1/<ROM SHA-256>/`.
+Legacy v3 states remain in their old folders and are not loaded or overwritten.
+The original v3 diagnostic history below applies to DingooBox 1.0.x only.
+
 Alpha18 compiles the JNI frontend from source and forwards DingooEmu's exact
 libretro serializer errors to Android Logcat. It also raises the decoded-state
 limit from 64 MiB to 128 MiB, so the Rust core must be rebuilt once.

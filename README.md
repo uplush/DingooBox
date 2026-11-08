@@ -1,159 +1,69 @@
 # 丁果盒 / DingooBox
 
-丁果盒（DingooBox）是一款面向 Android 的 Dingoo A320 游戏前端，基于
-[AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu) libretro 核心构建。
-界面使用 Jetpack Compose 和 Material 3，原生桥接层通过 JNI 驱动模拟核心。
+在 Android 上玩丁果 A320 的原生 `.app` 游戏。
 
-> 当前版本：`1.0.2`
->
-> Android 包名：`io.github.uplush.dingoobox`
+模拟核心来自 [DingooEmu](https://github.com/AloysHF/DingooEmu)。丁果盒在它的基础上做了 Android 界面，负责游戏库、触屏按键、手柄和存档这些日常使用的部分。
 
-## 安卓前端调用
+## 下载和使用
 
-DingooBox 支持天马 G 等安卓前端通过 `VIEW` URI 或 ROM 路径参数直接启动
-Dingoo `.app` 游戏。建议先将 ROM 所在目录加入 DingooBox 游戏库，这样在
-Android 分区存储环境下无需申请“所有文件访问权限”。
+到 [Releases](https://github.com/uplush/DingooBox/releases/latest) 下载 APK，安装后选择「添加游戏目录」，找到存放 `.app` 游戏的文件夹。也可以单独打开一个游戏文件。
+
+需要 **Android 7.0 或更高版本，以及 64 位 ARM 设备**。游戏文件需要自行准备；这里支持的是 A320 原生游戏，不是 Android 的 `.apk` 安装包。
+
+## 玩起来有哪些功能
+
+- 游戏库可以搜索、排序，在列表和网格之间切换。长按游戏可以换封面、查看游玩记录或创建桌面快捷方式。
+- 可以用屏幕按键，也可以接手柄。触屏布局能调整位置、大小和透明度，手柄按键可以重新映射，并为不同游戏保存配置。
+- 除了游戏本身的存档，还有五个手动即时存档槽、快速存档和退出时自动存档。
+- 游戏中支持快进、截图和重启，也能调整画面比例、过滤方式，或显示 FPS。
+- 界面有简体中文和英文。封面可以手动选择，也可以批量下载；自动下载只覆盖 DingooEmu 截图库里能匹配到的游戏。
+
+目前前端仍按 A320 的 320×240 横向画面运行，还没有接入上游的 A330、核心画面旋转和异步音频功能。不同游戏的兼容性和速度可能有差异，遇到问题欢迎在 [Issues](https://github.com/uplush/DingooBox/issues) 留下游戏名、手机型号、系统版本和复现步骤。
+
+## 从旧版升级
+
+仓库当前源码版本为 **1.1.0**，已发布的安装包以 Releases 页面为准。
+
+这一版改用官方 DingooEmu 核心，不再附加之前分支的补丁，因此也移除了旧版的 Extreme Drift 帧率增强开关。核心固定在一个经过构建测试的提交，不会在每次编译时自动追踪最新版本；具体提交见 [UPSTREAM_COMMIT](native/UPSTREAM_COMMIT)。
+
+**旧版的即时存档不能在新核心中继续读取。** 手动、快速和自动存档都会留在原处，新版另用一个目录保存，不会覆盖旧文件。检测到旧存档时，应用会弹出说明。这和游戏菜单里的「保存进度」不是一回事：后者仍使用原来的 `saves` 目录。
+
+如果还需要用旧核心读档，请先保留旧版安装包并备份应用数据。不要为了降级直接卸载应用，以免丢失数据。完整改动见 [更新记录](RELEASE_NOTES.md)。
+
+## 和天马 G 等前端一起用
+
+建议先在丁果盒里添加游戏目录，让应用取得目录访问权限，再从外部前端启动游戏。
+
+支持 `VIEW` URI，例如：
 
 ```text
-extensions: app
-launch: am start
- -n io.github.uplush.dingoobox/.MainActivity
- -a android.intent.action.VIEW
- -d file://{file.path}
+am start -n io.github.uplush.dingoobox/.MainActivity -a android.intent.action.VIEW -d "file://{file.path}"
 ```
 
-也可以使用天马 G 常见的 `ROM` 参数：
+也支持天马 G 常用的 `ROM` 参数：
 
 ```text
 am start -n io.github.uplush.dingoobox/.MainActivity -e ROM "{file.path}"
 ```
 
-同时兼容 `rom`、`path`、`game_path` 参数名及 `content://` URI。从外部前端
-启动的游戏退出后，会返回调用前端。
+`{file.path}` 由前端替换成游戏路径，文件扩展名设为 `app`。此外也接受 `rom`、`path`、`game_path` 参数和 `content://` URI。由外部前端启动时，退出游戏会返回调用它的前端。
 
-## 主要功能
+## 自己编译
 
-- 通过系统文件选择器批量添加 Dingoo `.app` 游戏，并直接在原文件夹运行，
-  兼容依赖同目录资源文件的游戏
-- MiNiQ 游戏库主页、固定抽屉、搜索、列表/网格切换和四种排序
-- 游戏封面、基于 DingooEmu 验证截图库的批量封面下载、游戏摘要、最近游玩和累计时长数据库
-- 长按游戏菜单与 MiNiQ 一致：开始游戏、读取存档、游戏摘要、选择封面图片、创建快捷方式
-- 常规、显示、音频、高级四页应用设置
-- MiNiQ 文件化设置仓库、简体中文/英文运行时切换和旧版设置迁移
-- 与 MiNiQ 统一的设置、触摸控制、映射、快捷键四页控制设置
-- 实体手柄按键/摇杆轴捕获、全局/按游戏控制方案及命名方案保存与载入
-- MiNiQ 式横屏和竖屏虚拟按键编辑器（网格吸附位置、单键大小、透明度、可见性）
-- 320×240 RGB565 画面和 22,050 Hz 立体声音频
-- 屏幕方向键、A/B/X/Y、L/R、开始和选择键
-- Android 实体手柄按键支持
-- MiNiQ 全屏四页 PauseMenu：暂停菜单、游戏信息、应用设置、控制设置
-- 横屏、竖屏游戏画面右上角均提供 MiNiQ 同款 PauseMenu 触控图标
-- MiNiQ 全屏保存/读取页、快速存档、五个手动槽、自动续玩提示及统一存档管理器
-- 与 MiNiQ 完全对应的用户数据目录和命名：即时存档位于
-  `Android/data/io.github.uplush.dingoobox/files/savestates/<ROM SHA-256>/`，
-  文件名为 `auto.state`、`quick.state`、`slot1.state` 至 `slot5.state`
-- 快进、截图、重启、沉浸式全屏、比例/过滤、FPS/速度叠加
-- MiNiQ 式截图保存：暂停菜单截图会打开系统“另存为”界面，让用户选择路径；
-  手柄截图快捷键直接保存到系统相册 `Pictures/DingooBox`
-- 仅包含 `arm64-v8a`，原生库按 16 KB 页面大小对齐
-
-## 支持环境
-
-- Android 7.0（API 24）或更高版本
-- 64 位 ARM Android 设备
-- 构建：Android Studio 自带 JBR 21、Android SDK Platform 37.0、Gradle 9.5.0
-- alpha17 起构建 JNI：NDK 28.2.13676358、CMake 3.22.1
-- 重新编译模拟器核心：Rust stable、`aarch64-linux-android` target、`cargo-ndk`
-
-## 构建
-
-DingooEmu 核心通过 Git Submodule 集成在 `native/DingooEmu`，主仓库会锁定到
-经过 DingooBox 验证的核心提交。
-
-首次克隆请使用：
+仓库带有预编译的 ARM64 核心，普通 APK 构建不需要先安装 Rust。准备好 Android Studio 的 JDK、Android SDK 37、NDK 28.2.13676358 和 CMake 3.22.1 后：
 
 ```bash
 git clone --recurse-submodules https://github.com/uplush/DingooBox.git
 cd DingooBox
-```
-
-如果已经克隆过仓库，或核心目录为空，请执行：
-
-```bash
-git submodule update --init --recursive
-```
-
-仓库同时包含供 `arm64-v8a` 使用的预编译 `libdingooemu.so` 和
-`libc++_shared.so`，可以直接构建 APK：
-
-```bash
 ./gradlew assembleDebug
 ```
 
-Windows PowerShell：
+Windows 下最后一条命令换成 `.\gradlew.bat assembleDebug`，工程请放在不含中文等非 ASCII 字符的短路径中。APK 会生成在 `app/build/outputs/apk/debug/app-debug.apk`。
 
-```powershell
-.\gradlew.bat assembleDebug
-```
+重新编译核心、运行测试和签名的说明放在 [构建文档](docs/BUILDING.md)。遇到存档失败，可以参考 [存档诊断](SAVE_STATE_DIAGNOSTICS.md) 导出日志。
 
-生成文件位于 `app/build/outputs/apk/debug/app-debug.apk`。Debug 与 Release
-构建使用相同的正式包名，不追加 `.debug`。
+## 感谢与许可
 
-存档失败诊断：清空日志、复现一次失败，再导出原生标签：
+感谢 [AloysHF](https://github.com/AloysHF) 开发 [DingooEmu](https://github.com/AloysHF/DingooEmu)，丁果盒的模拟能力来自这个项目。Android 界面和交互从 [MiNiQ](https://github.com/uplush/MiNiQ) 适配而来，具体来源记录在 [MINIQ_UI_PORT.md](MINIQ_UI_PORT.md)。
 
-```powershell
-adb logcat -c
-# 在游戏内尝试保存一次
-adb logcat -d -s DingooState:I DingooCore:E *:S
-```
-
-## 重新构建 DingooEmu 核心
-
-修改或更新核心源码后，需要重新生成 `libdingooemu.so`。
-
-Linux/macOS：
-
-```bash
-git submodule update --init --recursive
-rustup target add aarch64-linux-android
-cargo install cargo-ndk
-ANDROID_NDK_HOME=/path/to/ndk/28.2.13676358 ./scripts/build-core.sh
-./gradlew assembleDebug
-```
-
-Windows PowerShell：
-
-```powershell
-git submodule update --init --recursive
-rustup target add aarch64-linux-android
-cargo install cargo-ndk
-$env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\28.2.13676358"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-core.ps1
-.\gradlew.bat assembleDebug
-```
-
-## 已知限制
-
-- 在线封面下载仅匹配 DingooEmu 上游验证截图目录中的 `.app` 游戏；目录外游戏仍可从长按菜单选择本地图片。
-- 语言切换、显示滤镜和声音柔化已经连接运行时；DingooEmu 没有等价
-  核心接口的 Pokémon Mini 液晶模式、原机音效和屏幕震动设置不会显示。
-- 本仓库不提供签名密钥。自行构建的 Debug APK 使用 Android 开发调试证书；
-  正式分发 APK 时请使用自己的 Release 签名。
-
-## 来源与授权
-
-- DingooEmu 原作者：[@AloysHF](https://github.com/AloysHF)
-- DingooEmu 原项目：[AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu)
-- 原作者已明确表示欢迎二创，并要求保留署名和原项目地址。
-- Dingoo（丁果科技）、Dingoo A320 及相关名称和商标归各自权利人所有。
-
-界面与交互架构基于 [uplush/MiNiQ](https://github.com/uplush/MiNiQ) 源码适配，
-锁定提交 `596088d5c684d7990ef27d5f8e49d1897205ece6`。逐文件来源与 Dingoo 适配点
-见 [`MINIQ_UI_PORT.md`](MINIQ_UI_PORT.md)。
-
-## 许可证
-
-Android 前端使用 [BSD 3-Clause License](LICENSE)。内置 DingooEmu 源码及其
-第三方组件保留各自许可证，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)、
-[`native/DingooEmu/LICENSE`](native/DingooEmu/LICENSE) 和
-[`native/DingooEmu/THIRD_PARTY_LICENSES.md`](native/DingooEmu/THIRD_PARTY_LICENSES.md)。
+Android 前端使用 [BSD 3-Clause License](LICENSE)。DingooEmu 及其依赖保留各自的许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.md)、[核心许可证](native/DingooEmu/LICENSE) 和 [核心第三方许可](native/DingooEmu/THIRD_PARTY_LICENSES.md)。Dingoo、丁果 A320 等名称及商标归各自权利人所有。

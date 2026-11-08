@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.uplush.dingoobox"
         minSdk = 24
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.1.0"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -59,6 +59,9 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = false
+            // Rust release builds already strip symbols. Keep this audited
+            // core byte-identical to native/core-build.sha256 inside the APK.
+            keepDebugSymbols += "**/libdingooemu.so"
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -67,6 +70,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.activity:activity-compose:1.8.0")
     implementation("androidx.compose.ui:ui")

@@ -18,6 +18,15 @@ if (-not (Get-Command cargo-ndk -ErrorAction SilentlyContinue)) {
     throw "cargo-ndk is required."
 }
 
+$ExpectedRevision = (Get-Content (Join-Path $ProjectDir "native\UPSTREAM_COMMIT") -Raw).Trim()
+$ActualRevision = git -C $CoreDir rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $ActualRevision -ne $ExpectedRevision) {
+    throw "Core checkout must match native/UPSTREAM_COMMIT before building."
+}
+if (git -C $CoreDir status --porcelain --untracked-files=no) {
+    throw "Official core source must be unmodified before building."
+}
+
 Push-Location $CoreDir
 try {
     $PreviousRustFlags = $env:RUSTFLAGS
@@ -26,7 +35,7 @@ try {
         -t arm64-v8a `
         --platform 24 `
         -o (Join-Path $ProjectDir "app\src\main\jniLibs") `
-        build -p dingooemu-libretro --release
+        build -p dingooemu-libretro --release --locked
     if ($LASTEXITCODE -ne 0) { throw "DingooEmu core build failed." }
 }
 finally {
@@ -34,4 +43,8 @@ finally {
     Pop-Location
 }
 
+$CoreHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (
+    Join-Path $ProjectDir "app\src\main\jniLibs\arm64-v8a\libdingooemu.so"
+)).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText((Join-Path $ProjectDir "native\core-build.sha256"), "$CoreHash`n")
 Write-Host "Core written to app\src\main\jniLibs\arm64-v8a\libdingooemu.so"

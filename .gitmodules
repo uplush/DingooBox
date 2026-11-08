@@ -1,4 +1,4 @@
 [submodule "native/DingooEmu"]
 	path = native/DingooEmu
-	url = https://github.com/uplush/DingooEmu.git
-	branch = dingoobox-integration
+	url = https://github.com/AloysHF/DingooEmu.git
+	branch = master

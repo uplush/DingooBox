@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag
         required: true
-        default: v1.0.1
+        default: v1.1.0
 
 permissions:
   contents: write
@@ -59,7 +59,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.DINGOOBOX_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew clean assembleRelease --no-configuration-cache \
+          ./gradlew clean testDebugUnitTest assembleRelease --no-configuration-cache \
             -Pandroid.injected.signing.store.file="$RUNNER_TEMP/DingooBox-release.jks" \
             -Pandroid.injected.signing.store.password="$STORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \

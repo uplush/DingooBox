@@ -1,7 +1,8 @@
 # Third-party notices
 
 This project embeds the DingooEmu libretro core from
-[AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu), revision `e2d09a7`.
+[AloysHF/DingooEmu](https://github.com/AloysHF/DingooEmu), revision
+`de68ee7a1fa6aee9aefb5b70c2e842f54c7f0870` (unmodified official upstream).
 
 DingooEmu is distributed under the BSD 3-Clause License. Its full license is
 included at `native/DingooEmu/LICENSE`. Notices for software incorporated by

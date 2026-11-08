@@ -86,7 +86,6 @@ std::string rom_runtime_path;
 std::string rom_runtime_directory;
 bool core_initialized = false;
 bool game_loaded = false;
-bool frame_rate_enhancement_enabled = false;
 std::atomic<bool> shutdown_requested{false};
 
 void core_log(unsigned level, const char *message) {
@@ -129,15 +128,8 @@ bool environment(unsigned command, void *data) {
             if (data == nullptr) return false;
             auto *variable = static_cast<retro_variable *>(data);
             if (variable->key == nullptr) return false;
-            if (std::strcmp(
-                    variable->key,
-                    "dingooemu_frame_rate_enhancement"
-                ) == 0) {
-                variable->value = frame_rate_enhancement_enabled
-                    ? "enabled"
-                    : "disabled";
-                return true;
-            }
+            // Keep upstream defaults (JIT, landscape and synchronous audio).
+            // Optional core features require matching frontend support first.
             return false;
         }
         case ENV_GET_LOG_INTERFACE:
@@ -288,7 +280,6 @@ void shutdown_core() {
     release_rom_runtime_file();
     input_mask.store(0, std::memory_order_relaxed);
     shutdown_requested.store(false, std::memory_order_relaxed);
-    frame_rate_enhancement_enabled = false;
 }
 
 }  // namespace
@@ -299,12 +290,10 @@ Java_io_github_uplush_dingoobox_NativeBridge_nativeInitialize(
     jobject,
     jbyteArray rom_data_value,
     jstring rom_name_value,
-    jstring save_directory_value,
-    jboolean frame_rate_enhancement_value
+    jstring save_directory_value
 ) {
     std::lock_guard lock(core_mutex);
     shutdown_core();
-    frame_rate_enhancement_enabled = frame_rate_enhancement_value == JNI_TRUE;
     if (rom_data_value == nullptr) return JNI_FALSE;
 
     const std::string rom_name = from_jstring(env, rom_name_value);
